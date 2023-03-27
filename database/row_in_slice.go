@@ -7,6 +7,89 @@ import (
 	"strconv"
 )
 
+type PacketSender interface {
+	PacketCount([]interface{}) int
+	ShouldSend(Count int) bool
+	Send(row [][]interface{})
+}
+
+func (m *MySQL) StreamQueryRows(ctx context.Context, packetSender PacketSender, querySQL string, args ...interface{}) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("query rows on %s:%d failed <-- %s", m.IP, m.Port, err.Error())
+		}
+	}()
+
+	session, err := m.OpenSession(ctx)
+	defer func() {
+		if session != nil {
+			_ = session.Close()
+		}
+	}()
+	if err != nil {
+		return err
+	}
+
+	rawRows, err := session.QueryContext(ctx, querySQL, args...)
+	defer func() {
+		if rawRows != nil {
+			_ = rawRows.Close()
+		}
+	}()
+	if err != nil {
+		return
+	}
+
+	colTypes, err := rawRows.ColumnTypes()
+	if err != nil {
+		return
+	}
+
+	fields := make([]Field, 0, len(colTypes))
+	for _, colType := range colTypes {
+		fields = append(fields, Field{Name: colType.Name(), Type: getDataType(colType.DatabaseTypeName())})
+	}
+
+	var count int
+	var rowCount int
+	var rows = make([][]interface{}, 0)
+	for rawRows.Next() {
+		receiver := createReceivers(fields)
+		err = rawRows.Scan(receiver...)
+		if err != nil {
+			err = fmt.Errorf("scan rows failed <-- %s", err.Error())
+			return
+		}
+		row := getRecordFromReceiver(receiver, fields)
+		count += packetSender.PacketCount(row)
+		rowCount++
+
+		if packetSender.ShouldSend(count) {
+			packetSender.Send(rows)
+			rows = rows[0:0]
+			count = 0
+			rowCount = 0
+		}
+
+		err = rawRows.Err()
+		if err != nil {
+			return nil
+		}
+	}
+
+	if rowCount > 0 {
+		packetSender.Send(rows)
+		count = 0
+		rowCount = 0
+	}
+
+	err = rawRows.Err()
+	if err != nil {
+		return err
+	}
+	return
+}
+
 // QueryRowsWithContext 执行MySQL Query语句，返回多条数据
 func (m *MySQL) QueryRowsWithContext(ctx context.Context, querySQL string, args ...interface{}) (
 	queryRows *Rows, err error) {
