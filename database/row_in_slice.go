@@ -7,6 +7,61 @@ import (
 	"strconv"
 )
 
+func (m *MySQL) StreamQueryRows(ctx context.Context, send func(row []interface{}) error, querySQL string, args ...interface{}) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("query rows on %s:%d failed <-- %s", m.IP, m.Port, err.Error())
+		}
+	}()
+
+	session, err := m.OpenSession(ctx)
+	defer func() {
+		if session != nil {
+			_ = session.Close()
+		}
+	}()
+	if err != nil {
+		return err
+	}
+
+	rawRows, err := session.QueryContext(ctx, querySQL, args...)
+	defer func() {
+		if rawRows != nil {
+			_ = rawRows.Close()
+		}
+	}()
+	if err != nil {
+		return
+	}
+
+	colTypes, err := rawRows.ColumnTypes()
+	if err != nil {
+		return
+	}
+
+	fields := make([]Field, 0, len(colTypes))
+	for _, colType := range colTypes {
+		fields = append(fields, Field{Name: colType.Name(), Type: getDataType(colType.DatabaseTypeName())})
+	}
+
+	for rawRows.Next() {
+		receiver := createReceivers(fields)
+		err = rawRows.Scan(receiver...)
+		if err != nil {
+			err = fmt.Errorf("scan rows failed <-- %s", err.Error())
+			return
+		}
+		row := getRecordFromReceiver(receiver, fields)
+		err = send(row)
+		if err != nil {
+			return
+		}
+	}
+
+	err = rawRows.Err()
+	return
+}
+
 // QueryRowsWithContext 执行MySQL Query语句，返回多条数据
 func (m *MySQL) QueryRowsWithContext(ctx context.Context, querySQL string, args ...interface{}) (
 	queryRows *Rows, err error) {
