@@ -270,6 +270,8 @@ func (m *MySQL) OpenSession(ctx context.Context) (session *sql.Conn, err error) 
 	}
 
 	session, err = rawDB.Conn(ctx)
+
+	_, err = session.ExecContext(ctx, "SET time_zone = '+00:00'")
 	return
 }
 
