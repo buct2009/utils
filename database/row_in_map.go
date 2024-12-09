@@ -1351,9 +1351,10 @@ func getDataType(dbColType string) (colType string) {
 
 func (m *MySQL) fillConnStr() string {
 	zone := url.QueryEscape("+08:00")
+	loc := url.QueryEscape("Asia/Shanghai")
 	dbServerInfoStr := fmt.Sprintf(
-		"%s:%s@tcp(%s:%d)/%s?multiStatements=%v&interpolateParams=%v&maxAllowedPacket=%d&time_zone='%s'",
-		m.UserName, m.Passwd, m.IP, m.Port, m.DBName, m.MultiStatements, m.InterpolateParams, m.MaxAllowedPacket, zone)
+		"%s:%s@tcp(%s:%d)/%s?multiStatements=%v&interpolateParams=%v&maxAllowedPacket=%d&time_zone='%s'&loc='%s'",
+		m.UserName, m.Passwd, m.IP, m.Port, m.DBName, m.MultiStatements, m.InterpolateParams, m.MaxAllowedPacket, zone, loc)
 	if m.QueryTimeout > 0 {
 		dbServerInfoStr = fmt.Sprintf("%s&timeout=3s&readTimeout=%ds&writeTimeout=%ds",
 			dbServerInfoStr, m.QueryTimeout, m.QueryTimeout)
